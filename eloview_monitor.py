@@ -7,7 +7,7 @@ from datetime import datetime
 
 # ── Credenciales ──────────────────────────────────────────
 CLIENT_ID     = os.environ.get("CLIENT_ID", "yLeZA2aELm5CztEP1IKV4MZMkG")
-CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "TU_CLIENT_SECRET_AQUI")
+CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "QlvJxcZsoZLMWYzOckdRlb6VPT80qz8R0RJxjifizFLIwoJQrs52")
 ORG_ID        = os.environ.get("ORG_ID", "01K7PZV1M1HWYWAKGC75GWXVEB")
 TG_TOKEN      = os.environ.get("TG_TOKEN", "TU_BOT_TOKEN_AQUI")
 TG_CHAT       = os.environ.get("TG_CHAT", "1019869677")
