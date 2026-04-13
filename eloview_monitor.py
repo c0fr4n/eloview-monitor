@@ -6,19 +6,19 @@ import os
 from datetime import datetime
 
 # ── Credenciales ──────────────────────────────────────────
-CLIENT_ID     = os.environ.get("CLIENT_ID", "yLeZA2aELm5CztEP1IKV4MZMkG")
+CLIENT_ID     = os.environ.get("CLIENT_ID",     "yLeZA2aELm5CztEP1IKV4MZMkG")
 CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "QlvJxcZsoZLMWYzOckdRlb6VPT80qz8R0RJxjifizFLIwoJQrs52")
-ORG_ID        = os.environ.get("ORG_ID", "01K7PZV1M1HWYWAKGC75GWXVEB")
-TG_TOKEN      = os.environ.get("TG_TOKEN", "TU_BOT_TOKEN_AQUI")
-TG_CHAT       = os.environ.get("TG_CHAT", "1019869677")
+ORG_ID        = os.environ.get("ORG_ID",        "01K7PZV1M1HWYWAKGC75GWXVEB")
+TG_TOKEN      = os.environ.get("TG_TOKEN",      "8518345019:AAHnPkjv1xqCQ2EtPPpaeaCd5izBFUcKFXE")
+TG_CHAT       = os.environ.get("TG_CHAT",       "1019869677")
 
-INTERVALO_MIN    = 5      # cada cuántos minutos revisa
-UMBRAL_OFFLINE   = 120   # minutos antes de alertar (2 horas)
-HORA_REPORTE     = "08:00"
-HORA_INICIO      = 8     # horario de alertas
-HORA_FIN         = 20
-BASE             = "https://secure-api.eloview.com/prod"
-ESTADO_FILE      = "estado_dispositivos.json"
+INTERVALO_MIN  = 5
+UMBRAL_OFFLINE = 120
+HORA_REPORTE   = "08:00"
+HORA_INICIO    = 8
+HORA_FIN       = 20
+BASE           = "https://secure-api.eloview.com/prod"
+ESTADO_FILE    = "estado_dispositivos.json"
 # ──────────────────────────────────────────────────────────
 
 token_cache = {"token": None, "obtenido_a": 0}
@@ -85,14 +85,14 @@ def run_monitor():
         ahora  = time.time()
 
         for d in devs:
-            serial   = d.get("serial", "")
-            online   = d.get("isOnline", False)
-            grupo    = d.get("groupName", "Sin grupo")
+            serial    = d.get("serial", "")
+            online    = d.get("isOnline", False)
+            grupo     = d.get("groupName", "Sin grupo")
             contenido = d.get("contentName", "Sin contenido")
 
-            prev = estado.get(serial, {})
-            prev_online = prev.get("online", True)
-            offline_desde = prev.get("offline_desde", None)
+            prev           = estado.get(serial, {})
+            prev_online    = prev.get("online", True)
+            offline_desde  = prev.get("offline_desde", None)
             alerta_enviada = prev.get("alerta_enviada", False)
 
             if not online:
@@ -104,7 +104,7 @@ def run_monitor():
                 minutos_offline = int((ahora - offline_desde) / 60) if offline_desde else 0
 
                 if minutos_offline >= UMBRAL_OFFLINE and not alerta_enviada and hora_en_rango():
-                    horas  = minutos_offline // 60
+                    horas   = minutos_offline // 60
                     minutos = minutos_offline % 60
                     msg = (
                         f"🚨 *Alerta EloView — Dispositivo offline*\n"
@@ -141,7 +141,12 @@ def run_monitor():
                         send_telegram(msg)
                         print(f"  [{serial}] Recuperado tras {horas}h {minutos}min")
 
-                estado[serial] = {"online": True, "offline_desde": None, "alerta_enviada": False, "grupo": grupo}
+                estado[serial] = {
+                    "online": True,
+                    "offline_desde": None,
+                    "alerta_enviada": False,
+                    "grupo": grupo
+                }
 
         guardar_estado(estado)
 
@@ -158,10 +163,10 @@ def run_monitor():
 def reporte_diario():
     print(f"\n[{datetime.now().strftime('%d/%m/%Y %H:%M')}] Generando reporte diario...")
     try:
-        token = get_token()
-        devs  = get_devices(token)
+        token  = get_token()
+        devs   = get_devices(token)
         estado = cargar_estado()
-        ahora = time.time()
+        ahora  = time.time()
 
         total   = len(devs)
         ok      = sum(1 for d in devs if d.get("isOnline"))
@@ -169,7 +174,7 @@ def reporte_diario():
         pct     = round((ok / total) * 100) if total else 0
         fecha   = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-        msg = f"📊 *Reporte diario EloView*\n_{fecha}_\n\n"
+        msg  = f"📊 *Reporte diario EloView*\n_{fecha}_\n\n"
         msg += f"*Resumen*\n"
         msg += f"• Total: {total} dispositivos\n"
         msg += f"• Operativos: {ok}\n"
@@ -180,10 +185,10 @@ def reporte_diario():
         for d in devs:
             serial = d.get("serial", "")
             if not d.get("isOnline"):
-                grupo  = d.get("groupName", "Sin grupo")
-                prev   = estado.get(serial, {})
+                grupo         = d.get("groupName", "Sin grupo")
+                prev          = estado.get(serial, {})
                 offline_desde = prev.get("offline_desde", None)
-                tiempo = ""
+                tiempo        = ""
                 if offline_desde:
                     mins  = int((ahora - offline_desde) / 60)
                     horas = mins // 60
