@@ -3,7 +3,10 @@ import schedule
 import time
 import json
 import os
+import threading
 from datetime import datetime
+from flask import Flask, jsonify
+from flask_cors import CORS
 
 # ── Credenciales ──────────────────────────────────────────
 CLIENT_ID     = os.environ.get("CLIENT_ID",     "yLeZA2aELm5CztEP1IKV4MZMkG")
@@ -11,6 +14,7 @@ CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "QlvJxcZsoZLMWYzOckdRlb6VPT80qz8
 ORG_ID        = os.environ.get("ORG_ID",        "01K7PZV1M1HWYWAKGC75GWXVEB")
 TG_TOKEN      = os.environ.get("TG_TOKEN",      "8518345019:AAHnPkjv1xqCQ2EtPPpaeaCd5izBFUcKFXE")
 TG_CHAT       = os.environ.get("TG_CHAT",       "1019869677")
+PORT          = int(os.environ.get("PORT", 8080))
 
 INTERVALO_MIN  = 5
 UMBRAL_OFFLINE = 120
@@ -21,6 +25,8 @@ BASE           = "https://secure-api.eloview.com/prod"
 ESTADO_FILE    = "estado_dispositivos.json"
 # ──────────────────────────────────────────────────────────
 
+app = Flask(__name__)
+CORS(app)
 token_cache = {"token": None, "obtenido_a": 0}
 
 
@@ -99,7 +105,7 @@ def run_monitor():
                 if prev_online:
                     offline_desde  = ahora
                     alerta_enviada = False
-                    print(f"  [{serial}] Nuevo offline detectado — {grupo}")
+                    print(f"  [{serial}] Nuevo offline — {grupo}")
 
                 minutos_offline = int((ahora - offline_desde) / 60) if offline_desde else 0
 
@@ -116,13 +122,14 @@ def run_monitor():
                     )
                     send_telegram(msg)
                     alerta_enviada = True
-                    print(f"  [{serial}] Alerta enviada — {horas}h {minutos}min offline")
+                    print(f"  [{serial}] Alerta Telegram — {horas}h {minutos}min offline")
 
                 estado[serial] = {
                     "online": False,
                     "offline_desde": offline_desde,
                     "alerta_enviada": alerta_enviada,
-                    "grupo": grupo
+                    "grupo": grupo,
+                    "contenido": contenido
                 }
 
             else:
@@ -145,7 +152,8 @@ def run_monitor():
                     "online": True,
                     "offline_desde": None,
                     "alerta_enviada": False,
-                    "grupo": grupo
+                    "grupo": grupo,
+                    "contenido": contenido
                 }
 
         guardar_estado(estado)
@@ -209,22 +217,49 @@ def reporte_diario():
         print(f"  ERROR en reporte diario: {e}")
 
 
-# ── Ejecución ─────────────────────────────────────────────
+# ── API endpoints ─────────────────────────────────────────
+@app.route('/estado', methods=['GET'])
+def get_estado():
+    estado = cargar_estado()
+    ahora  = time.time()
+    result = {}
+    for serial, data in estado.items():
+        result[serial] = {
+            "online": data.get("online", True),
+            "offline_desde": data.get("offline_desde"),
+            "alerta_enviada": data.get("alerta_enviada", False),
+            "grupo": data.get("grupo", "Sin grupo"),
+            "contenido": data.get("contenido", ""),
+            "minutos_offline": int((ahora - data["offline_desde"]) / 60) if data.get("offline_desde") else 0
+        }
+    return jsonify({"success": True, "data": result, "timestamp": ahora})
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "ok", "timestamp": time.time()})
+
+
+# ── Monitor thread ────────────────────────────────────────
+def start_monitor():
+    run_monitor()
+    reporte_diario()
+    schedule.every(INTERVALO_MIN).minutes.do(run_monitor)
+    schedule.every().day.at(HORA_REPORTE).do(reporte_diario)
+    print(f"\nMonitor activo. Revisión cada {INTERVALO_MIN} min.\n")
+    while True:
+        schedule.run_pending()
+        time.sleep(30)
+
+
+# ── Inicio ────────────────────────────────────────────────
 print("=" * 52)
 print("  Monitor EloView — Arcoprime")
-print(f"  Revisión cada {INTERVALO_MIN} min | Alerta a las {UMBRAL_OFFLINE} min offline")
-print(f"  Horario de alertas: {HORA_INICIO}:00 - {HORA_FIN}:00")
-print(f"  Reporte diario: {HORA_REPORTE}")
+print(f"  Revisión cada {INTERVALO_MIN} min | Alerta a las {UMBRAL_OFFLINE} min")
+print(f"  Horario alertas: {HORA_INICIO}:00 - {HORA_FIN}:00")
+print(f"  API disponible en puerto {PORT}")
 print("=" * 52)
 
-run_monitor()
-reporte_diario()
+monitor_thread = threading.Thread(target=start_monitor, daemon=True)
+monitor_thread.start()
 
-schedule.every(INTERVALO_MIN).minutes.do(run_monitor)
-schedule.every().day.at(HORA_REPORTE).do(reporte_diario)
-
-print(f"\nMonitor activo. Ctrl+C para detener.\n")
-
-while True:
-    schedule.run_pending()
-    time.sleep(30)
+app.run(host='0.0.0.0', port=PORT)
