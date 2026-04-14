@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitor EloView — Arcoprime</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2235;
+  --border: rgba(255,255,255,0.07);
+  --text: #e8edf5;
+  --muted: #64748b;
+  --ok: #10b981;
+  --ok-bg: rgba(16,185,129,0.1);
+  --warn: #f59e0b;
+  --warn-bg: rgba(245,158,11,0.1);
+  --danger: #ef4444;
+  --danger-bg: rgba(239,68,68,0.1);
+  --accent: #3b82f6;
+  --accent-bg: rgba(59,130,246,0.1);
+  --mono: 'DM Mono', monospace;
+  --sans: 'DM Sans', sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 1.25rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  background: rgba(10,14,23,0.95);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+}
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+.logo-text { font-size: 14px; font-weight: 500; letter-spacing: .02em; }
+.logo-sub { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.header-right { display: flex; align-items: center; gap: 16px; }
+.last-update { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.refresh-btn {
+  font-family: var(--mono); font-size: 11px; padding: 6px 14px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); color: var(--text); cursor: pointer;
+  transition: all .15s;
+}
+.refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+.config-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+}
+.config-title { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 1rem; }
+.config-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.config-field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; font-family: var(--mono); }
+.config-field input {
+  width: 100%; padding: 8px 12px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-family: var(--mono); font-size: 12px;
+  outline: none; transition: border-color .15s;
+}
+.config-field input:focus { border-color: var(--accent); }
+.connect-btn {
+  width: 100%; margin-top: 1rem; padding: 10px;
+  background: var(--accent); color: white; border: none;
+  border-radius: 8px; font-family: var(--sans); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: opacity .15s;
+}
+.connect-btn:hover { opacity: .85; }
+.connect-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+.metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 2rem; }
+.metric-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 1.25rem; position: relative; overflow: hidden;
+}
+.metric-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.metric-card.total::before { background: var(--accent); }
+.metric-card.ok::before { background: var(--ok); }
+.metric-card.offline::before { background: var(--warn); }
+.metric-card.error::before { background: var(--danger); }
+.metric-label { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
+.metric-value { font-size: 36px; font-weight: 600; line-height: 1; }
+.metric-card.total .metric-value { color: var(--accent); }
+.metric-card.ok .metric-value { color: var(--ok); }
+.metric-card.offline .metric-value { color: var(--warn); }
+.metric-card.error .metric-value { color: var(--danger); }
+.metric-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+.avail-bar { margin-bottom: 2rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.avail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.avail-label { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+.avail-pct { font-size: 22px; font-weight: 600; color: var(--ok); font-family: var(--mono); }
+.bar-track { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+.bar-fill { height: 100%; border-radius: 3px; background: var(--ok); transition: width .6s ease; }
+
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+.section-title { font-size: 13px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.badge { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-family: var(--mono); }
+.badge-danger { background: var(--danger-bg); color: var(--danger); }
+.badge-ok { background: var(--ok-bg); color: var(--ok); }
+.badge-muted { background: var(--surface2); color: var(--muted); }
+
+.device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; margin-bottom: 2rem; }
+.device-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1rem;
+  display: flex; align-items: flex-start; gap: 12px;
+  transition: border-color .15s;
+}
+.device-card:hover { border-color: rgba(255,255,255,0.15); }
+.device-card.offline { border-left: 2px solid var(--danger); }
+.device-card.ok { border-left: 2px solid var(--ok); }
+.device-card.warn { border-left: 2px solid var(--warn); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.status-dot.ok { background: var(--ok); }
+.status-dot.offline { background: var(--danger); animation: blink 1.5s infinite; }
+.status-dot.warn { background: var(--warn); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.device-info { flex: 1; min-width: 0; }
+.device-serial { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--text); }
+.device-group { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-content { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-status { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-family: var(--mono); align-self: flex-start; flex-shrink: 0; }
+.device-status.ok { background: var(--ok-bg); color: var(--ok); }
+.device-status.offline { background: var(--danger-bg); color: var(--danger); }
+.device-status.warn { background: var(--warn-bg); color: var(--warn); }
+.device-status.nocontent { background: var(--warn-bg); color: var(--warn); }
+
+.alerts-list { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 2rem; }
+.alert-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.alert-row:last-child { border-bottom: none; }
+.alert-time { font-family: var(--mono); color: var(--muted); min-width: 70px; }
+.alert-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.alert-msg { flex: 1; }
+.alert-serial { font-family: var(--mono); color: var(--accent); }
+
+.empty { text-align: center; padding: 3rem; color: var(--muted); font-size: 13px; }
+
+.loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 3rem; color: var(--muted); font-size: 13px; }
+.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.filter-row { display: flex; gap: 8px; margin-bottom: 1rem; }
+.filter-btn { font-size: 11px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--muted); cursor: pointer; font-family: var(--mono); transition: all .15s; }
+.filter-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+@media (max-width: 768px) {
+  .main { padding: 1rem; }
+  .metrics { grid-template-columns: repeat(2, 1fr); }
+  .config-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-dot" id="liveDot"></div>
+    <span class="logo-text">Monitor EloView</span>
+    <span class="logo-sub">/ Arcoprime</span>
+  </div>
+  <div class="header-right">
+    <span class="last-update" id="lastUpdate">—</span>
+    <button class="refresh-btn" onclick="runMonitor()">↺ Actualizar</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <div class="config-panel" id="configPanel">
+    <div class="config-title">Configuración de acceso</div>
+    <div class="config-grid">
+      <div class="config-field">
+        <label>CLIENT ID</label>
+        <input type="text" id="cfgClientId" value="yLeZA2aELm5CztEP1IKV4MZMkG" />
+      </div>
+      <div class="config-field">
+        <label>CLIENT SECRET</label>
+        <input type="password" id="cfgClientSecret" placeholder="Tu client secret..." />
+      </div>
+      <div class="config-field">
+        <label>ORG ID</label>
+        <input type="text" id="cfgOrgId" value="01K7PZV1M1HWYWAKGC75GWXVEB" />
+      </div>
+    </div>
+    <button class="connect-btn" id="connectBtn" onclick="connect()">Conectar con EloView</button>
+    <div id="configStatus" style="margin-top:10px;font-size:12px;color:var(--muted)"></div>
+  </div>
+
+  <div id="dashboard" style="display:none">
+
+    <div class="metrics">
+      <div class="metric-card total">
+        <div class="metric-label">TOTAL DISPOSITIVOS</div>
+        <div class="metric-value" id="mTotal">—</div>
+        <div class="metric-sub" id="mSubTotal">—</div>
+      </div>
+      <div class="metric-card ok">
+        <div class="metric-label">OPERATIVOS</div>
+        <div class="metric-value" id="mOk">—</div>
+        <div class="metric-sub" id="mSubOk">online y con contenido</div>
+      </div>
+      <div class="metric-card offline">
+        <div class="metric-label">OFFLINE</div>
+        <div class="metric-value" id="mOffline">—</div>
+        <div class="metric-sub">sin conexión activa</div>
+      </div>
+      <div class="metric-card error">
+        <div class="metric-label">CON FALLAS</div>
+        <div class="metric-value" id="mError">—</div>
+        <div class="metric-sub">error de contenido</div>
+      </div>
+    </div>
+
+    <div class="avail-bar">
+      <div class="avail-header">
+        <span class="avail-label">DISPONIBILIDAD</span>
+        <span class="avail-pct" id="availPct">—%</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" id="availBar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <span class="section-title">Dispositivos</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="filterInfo" style="font-size:11px;color:var(--muted);font-family:var(--mono)"></span>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <button class="filter-btn active" onclick="setFilter('all',this)">Todos</button>
+      <button class="filter-btn" onclick="setFilter('offline',this)">Offline</button>
+      <button class="filter-btn" onclick="setFilter('ok',this)">Operativos</button>
+      <button class="filter-btn" onclick="setFilter('error',this)">Con fallas</button>
+    </div>
+
+    <div class="device-grid" id="deviceGrid"></div>
+
+    <div class="section-header">
+      <span class="section-title">Historial de alertas</span>
+      <span class="badge badge-muted" id="alertCount">0 eventos</span>
+    </div>
+    <div class="alerts-list" id="alertsList">
+      <div class="empty">Sin alertas registradas en esta sesión.</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const BASE = 'https://secure-api.eloview.com/prod';
+let token = null;
+let devices = [];
+let alerts = [];
+let currentFilter = 'all';
+let autoInterval = null;
+
+async function connect() {
+  const clientId = document.getElementById('cfgClientId').value.trim();
+  const clientSecret = document.getElementById('cfgClientSecret').value.trim();
+  if (!clientId || !clientSecret) {
+    document.getElementById('configStatus').textContent = 'Ingresa Client ID y Client Secret.';
+    return;
+  }
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true; btn.textContent = 'Conectando...';
+  document.getElementById('configStatus').textContent = '';
+  try {
+    const r = await fetch(`${BASE}/auth/${clientId}/token`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({clientsecret: clientSecret})
+    });
+    const d = await r.json();
+    if (r.ok && d.result && d.result.access_token) {
+      token = d.result.access_token;
+      document.getElementById('configPanel').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      await runMonitor();
+      autoInterval = setInterval(runMonitor, 5 * 60 * 1000);
+    } else {
+      document.getElementById('configStatus').style.color = '#ef4444';
+      document.getElementById('configStatus').textContent = 'Error: ' + (d.message || 'Credenciales inválidas.');
+    }
+  } catch(e) {
+    document.getElementById('configStatus').style.color = '#ef4444';
+    document.getElementById('configStatus').textContent = 'No se pudo conectar con EloView.';
+  }
+  btn.disabled = false; btn.textContent = 'Conectar con EloView';
+}
+
+async function runMonitor() {
+  const orgId = document.getElementById('cfgOrgId').value.trim();
+  if (!token || !orgId) return;
+  document.getElementById('liveDot').style.background = '#f59e0b';
+  try {
+    const r = await fetch(`${BASE}/orgs/${orgId}/contentStatus`, {
+      headers: {'Authorization': `Bearer ${token}`}
+    });
+    const d = await r.json();
+    if (!r.ok || !d.success) return;
+    const prev = [...devices];
+    devices = d.data || [];
+    updateMetrics();
+    renderDevices();
+    detectChanges(prev, devices);
+    const now = new Date().toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    document.getElementById('lastUpdate').textContent = 'Actualizado ' + now;
+    document.getElementById('liveDot').style.background = '#10b981';
+  } catch(e) {
+    document.getElementById('liveDot').style.background = '#ef4444';
+  }
+}
+
+function updateMetrics() {
+  const total = devices.length;
+  const ok = devices.filter(d => d.isOnline && d.contentId && d.contentStatus && d.contentStatus.toLowerCase() === 'success').length;
+  const offline = devices.filter(d => !d.isOnline).length;
+  const error = devices.filter(d => d.isOnline && d.contentId && d.contentStatus && d.contentStatus.toLowerCase() !== 'success').length;
+  const noContent = devices.filter(d => d.isOnline && !d.contentId).length;
+  const pct = total > 0 ? Math.round((ok/total)*100) : 0;
+
+  document.getElementById('mTotal').textContent = total;
+  document.getElementById('mSubTotal').textContent = `${noContent} sin contenido asignado`;
+  document.getElementById('mOk').textContent = ok;
+  document.getElementById('mOffline').textContent = offline;
+  document.getElementById('mError').textContent = error;
+  document.getElementById('availPct').textContent = pct + '%';
+  document.getElementById('availBar').style.width = pct + '%';
+  document.getElementById('availBar').style.background = pct >= 90 ? 'var(--ok)' : pct >= 70 ? 'var(--warn)' : 'var(--danger)';
+  document.getElementById('availPct').style.color = pct >= 90 ? 'var(--ok)' : pct >= 70 ? 'var(--warn)' : 'var(--danger)';
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderDevices();
+}
+
+function renderDevices() {
+  let filtered = devices;
+  if (currentFilter === 'offline') filtered = devices.filter(d => !d.isOnline);
+  else if (currentFilter === 'ok') filtered = devices.filter(d => d.isOnline && d.contentId && d.contentStatus && d.contentStatus.toLowerCase() === 'success');
+  else if (currentFilter === 'error') filtered = devices.filter(d => d.isOnline && (!d.contentId || (d.contentStatus && d.contentStatus.toLowerCase() !== 'success')));
+
+  filtered.sort((a,b) => {
+    const score = d => !d.isOnline ? 0 : !d.contentId ? 1 : d.contentStatus && d.contentStatus.toLowerCase() !== 'success' ? 2 : 3;
+    return score(a) - score(b);
+  });
+
+  document.getElementById('filterInfo').textContent = filtered.length + ' de ' + devices.length;
+
+  if (!filtered.length) {
+    document.getElementById('deviceGrid').innerHTML = '<div class="empty" style="grid-column:1/-1">Sin dispositivos en esta categoría.</div>';
+    return;
+  }
+
+  document.getElementById('deviceGrid').innerHTML = filtered.map(d => {
+    let cardClass, dotClass, statusClass, statusText;
+    if (!d.isOnline) {
+      cardClass = 'offline'; dotClass = 'offline'; statusClass = 'offline'; statusText = 'Offline';
+    } else if (!d.contentId) {
+      cardClass = 'warn'; dotClass = 'warn'; statusClass = 'nocontent'; statusText = 'Sin contenido';
+    } else if (d.contentStatus && d.contentStatus.toLowerCase() !== 'success') {
+      cardClass = 'warn'; dotClass = 'warn'; statusClass = 'warn'; statusText = d.contentStatus;
+    } else {
+      cardClass = 'ok'; dotClass = 'ok'; statusClass = 'ok'; statusText = 'OK';
+    }
+    const grupo = d.groupName || d.group || 'Sin grupo';
+    const contenido = d.contentName || '—';
+    return `<div class="device-card ${cardClass}">
+      <div class="status-dot ${dotClass}"></div>
+      <div class="device-info">
+        <div class="device-serial">${d.serial}</div>
+        <div class="device-group">${grupo}</div>
+        <div class="device-content">${contenido}</div>
+      </div>
+      <span class="device-status ${statusClass}">${statusText}</span>
+    </div>`;
+  }).join('');
+}
+
+function detectChanges(prev, curr) {
+  if (!prev.length) return;
+  const prevMap = {};
+  prev.forEach(d => { prevMap[d.serial] = d.isOnline; });
+  curr.forEach(d => {
+    const wasOnline = prevMap[d.serial];
+    if (wasOnline === undefined) return;
+    if (wasOnline && !d.isOnline) {
+      addAlert('danger', d.serial, (d.groupName || 'Sin grupo'), 'Se desconectó');
+    } else if (!wasOnline && d.isOnline) {
+      addAlert('ok', d.serial, (d.groupName || 'Sin grupo'), 'Se reconectó');
+    }
+  });
+}
+
+function addAlert(type, serial, group, msg) {
+  const now = new Date().toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit'});
+  alerts.unshift({type, serial, group, msg, time: now});
+  if (alerts.length > 50) alerts.pop();
+  renderAlerts();
+}
+
+function renderAlerts() {
+  document.getElementById('alertCount').textContent = alerts.length + ' eventos';
+  if (!alerts.length) {
+    document.getElementById('alertsList').innerHTML = '<div class="empty">Sin alertas registradas en esta sesión.</div>';
+    return;
+  }
+  document.getElementById('alertsList').innerHTML = alerts.map(a => `
+    <div class="alert-row">
+      <span class="alert-time">${a.time}</span>
+      <div class="alert-dot" style="background:${a.type === 'ok' ? 'var(--ok)' : 'var(--danger)'}"></div>
+      <span class="alert-msg"><span class="alert-serial">${a.serial}</span> — ${a.group} — ${a.msg}</span>
+    </div>`).join('');
+}
+</script>
+</body>
+</html>
