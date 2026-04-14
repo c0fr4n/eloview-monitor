@@ -7,6 +7,7 @@ import threading
 from datetime import datetime
 from flask import Flask, jsonify
 from flask_cors import CORS
+import redis
 
 # ── Credenciales ──────────────────────────────────────────
 CLIENT_ID     = os.environ.get("CLIENT_ID",     "yLeZA2aELm5CztEP1IKV4MZMkG")
@@ -14,6 +15,7 @@ CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "QlvJxcZsoZLMWYzOckdRlb6VPT80qz8
 ORG_ID        = os.environ.get("ORG_ID",        "01K7PZV1M1HWYWAKGC75GWXVEB")
 TG_TOKEN      = os.environ.get("TG_TOKEN",      "8518345019:AAHnPkjv1xqCQ2EtPPpaeaCd5izBFUcKFXE")
 TG_CHAT       = os.environ.get("TG_CHAT",       "1019869677")
+REDIS_URL     = os.environ.get("REDIS_URL",     "redis://localhost:6379")
 PORT          = int(os.environ.get("PORT", 8080))
 
 INTERVALO_MIN  = 5
@@ -22,12 +24,13 @@ HORA_REPORTE   = "08:00"
 HORA_INICIO    = 8
 HORA_FIN       = 20
 BASE           = "https://secure-api.eloview.com/prod"
-ESTADO_FILE    = "estado_dispositivos.json"
+REDIS_KEY      = "eloview:estado"
 # ──────────────────────────────────────────────────────────
 
-app = Flask(__name__)
+app   = Flask(__name__)
 CORS(app)
 token_cache = {"token": None, "obtenido_a": 0}
+rdb = redis.from_url(REDIS_URL, decode_responses=True)
 
 
 def get_token():
@@ -64,15 +67,19 @@ def send_telegram(msg):
 
 
 def cargar_estado():
-    if os.path.exists(ESTADO_FILE):
-        with open(ESTADO_FILE, "r") as f:
-            return json.load(f)
-    return {}
+    try:
+        data = rdb.get(REDIS_KEY)
+        return json.loads(data) if data else {}
+    except Exception as e:
+        print(f"  ERROR Redis lectura: {e}")
+        return {}
 
 
 def guardar_estado(estado):
-    with open(ESTADO_FILE, "w") as f:
-        json.dump(estado, f)
+    try:
+        rdb.set(REDIS_KEY, json.dumps(estado))
+    except Exception as e:
+        print(f"  ERROR Redis escritura: {e}")
 
 
 def hora_en_rango():
@@ -83,7 +90,6 @@ def hora_en_rango():
 def run_monitor():
     ahora_str = datetime.now().strftime("%d/%m/%Y %H:%M")
     print(f"\n[{ahora_str}] Ejecutando monitoreo...")
-
     try:
         token  = get_token()
         devs   = get_devices(token)
@@ -157,7 +163,6 @@ def run_monitor():
                 }
 
         guardar_estado(estado)
-
         offline_total = sum(1 for d in devs if not d.get("isOnline"))
         ok_total      = len(devs) - offline_total
         print(f"  Total: {len(devs)} | OK: {ok_total} | Offline: {offline_total}")
@@ -225,21 +230,22 @@ def get_estado():
     result = {}
     for serial, data in estado.items():
         result[serial] = {
-            "online": data.get("online", True),
-            "offline_desde": data.get("offline_desde"),
-            "alerta_enviada": data.get("alerta_enviada", False),
-            "grupo": data.get("grupo", "Sin grupo"),
-            "contenido": data.get("contenido", ""),
+            "online":          data.get("online", True),
+            "offline_desde":   data.get("offline_desde"),
+            "alerta_enviada":  data.get("alerta_enviada", False),
+            "grupo":           data.get("grupo", "Sin grupo"),
+            "contenido":       data.get("contenido", ""),
             "minutos_offline": int((ahora - data["offline_desde"]) / 60) if data.get("offline_desde") else 0
         }
     return jsonify({"success": True, "data": result, "timestamp": ahora})
+
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "ok", "timestamp": time.time()})
 
 
-# ── Monitor thread ────────────────────────────────────────
+# ── Monitor thread ─────────────────────────────────────────
 def start_monitor():
     run_monitor()
     reporte_diario()
@@ -251,7 +257,7 @@ def start_monitor():
         time.sleep(30)
 
 
-# ── Inicio ────────────────────────────────────────────────
+# ── Inicio ─────────────────────────────────────────────────
 print("=" * 52)
 print("  Monitor EloView — Arcoprime")
 print(f"  Revisión cada {INTERVALO_MIN} min | Alerta a las {UMBRAL_OFFLINE} min")
