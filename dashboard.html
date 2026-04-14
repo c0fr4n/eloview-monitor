@@ -136,11 +136,13 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 .device-serial { font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--text); }
 .device-group { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .device-content { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device-offline-time { font-size: 10px; color: var(--danger); margin-top: 3px; font-family: var(--mono); }
 .device-status { font-size: 10px; padding: 2px 8px; border-radius: 20px; font-family: var(--mono); align-self: flex-start; flex-shrink: 0; }
 .device-status.ok { background: var(--ok-bg); color: var(--ok); }
 .device-status.offline { background: var(--danger-bg); color: var(--danger); }
 .device-status.warn { background: var(--warn-bg); color: var(--warn); }
 .device-status.nocontent { background: var(--warn-bg); color: var(--warn); }
+.device-status.critical { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
 
 .alerts-list { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 2rem; }
 .alert-row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }
@@ -149,12 +151,10 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 .alert-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .alert-msg { flex: 1; }
 .alert-serial { font-family: var(--mono); color: var(--accent); }
+.alert-note { font-size: 10px; color: var(--muted); margin-left: 6px; font-family: var(--mono); }
 
 .empty { text-align: center; padding: 3rem; color: var(--muted); font-size: 13px; }
-
-.loading { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 3rem; color: var(--muted); font-size: 13px; }
-.spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+.threshold-note { font-size: 11px; color: var(--muted); font-family: var(--mono); background: var(--surface2); padding: 8px 14px; border-radius: 6px; margin-bottom: 1rem; }
 
 .filter-row { display: flex; gap: 8px; margin-bottom: 1rem; }
 .filter-btn { font-size: 11px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); color: var(--muted); cursor: pointer; font-family: var(--mono); transition: all .15s; }
@@ -214,7 +214,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
       <div class="metric-card ok">
         <div class="metric-label">OPERATIVOS</div>
         <div class="metric-value" id="mOk">—</div>
-        <div class="metric-sub" id="mSubOk">online y con contenido</div>
+        <div class="metric-sub">online y con contenido</div>
       </div>
       <div class="metric-card offline">
         <div class="metric-label">OFFLINE</div>
@@ -240,9 +240,7 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
     <div class="section-header">
       <span class="section-title">Dispositivos</span>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span id="filterInfo" style="font-size:11px;color:var(--muted);font-family:var(--mono)"></span>
-      </div>
+      <span id="filterInfo" style="font-size:11px;color:var(--muted);font-family:var(--mono)"></span>
     </div>
 
     <div class="filter-row">
@@ -255,11 +253,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
     <div class="device-grid" id="deviceGrid"></div>
 
     <div class="section-header">
-      <span class="section-title">Historial de alertas</span>
-      <span class="badge badge-muted" id="alertCount">0 eventos</span>
+      <span class="section-title">Alertas — desconexiones +2 horas</span>
+      <span class="badge badge-muted" id="alertCount">0 alertas</span>
     </div>
+    <div class="threshold-note">Solo se registran dispositivos que llevan 120 minutos o más offline</div>
     <div class="alerts-list" id="alertsList">
-      <div class="empty">Sin alertas registradas en esta sesión.</div>
+      <div class="empty">Sin alertas registradas. Las alertas aparecerán cuando un dispositivo lleve 2 horas desconectado.</div>
     </div>
 
   </div>
@@ -267,11 +266,12 @@ body { background: var(--bg); color: var(--text); font-family: var(--sans); min-
 
 <script>
 const BASE = 'https://secure-api.eloview.com/prod';
+const UMBRAL_MIN = 120;
 let token = null;
 let devices = [];
 let alerts = [];
+let offlineTimestamps = {};
 let currentFilter = 'all';
-let autoInterval = null;
 
 async function connect() {
   const clientId = document.getElementById('cfgClientId').value.trim();
@@ -282,7 +282,6 @@ async function connect() {
   }
   const btn = document.getElementById('connectBtn');
   btn.disabled = true; btn.textContent = 'Conectando...';
-  document.getElementById('configStatus').textContent = '';
   try {
     const r = await fetch(`${BASE}/auth/${clientId}/token`, {
       method: 'POST',
@@ -295,7 +294,7 @@ async function connect() {
       document.getElementById('configPanel').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
       await runMonitor();
-      autoInterval = setInterval(runMonitor, 5 * 60 * 1000);
+      setInterval(runMonitor, 5 * 60 * 1000);
     } else {
       document.getElementById('configStatus').style.color = '#ef4444';
       document.getElementById('configStatus').textContent = 'Error: ' + (d.message || 'Credenciales inválidas.');
@@ -317,11 +316,40 @@ async function runMonitor() {
     });
     const d = await r.json();
     if (!r.ok || !d.success) return;
+
+    const ahora = Date.now();
     const prev = [...devices];
     devices = d.data || [];
+
+    // Actualizar timestamps de desconexión
+    devices.forEach(dev => {
+      const serial = dev.serial;
+      if (!dev.isOnline) {
+        if (!offlineTimestamps[serial]) {
+          offlineTimestamps[serial] = { since: ahora, alerted: false };
+        }
+        // Verificar si cumplió 2 horas y no ha sido alertado
+        const mins = Math.floor((ahora - offlineTimestamps[serial].since) / 60000);
+        if (mins >= UMBRAL_MIN && !offlineTimestamps[serial].alerted) {
+          offlineTimestamps[serial].alerted = true;
+          const grupo = dev.groupName || dev.group || 'Sin grupo';
+          addAlert(serial, grupo, mins);
+        }
+      } else {
+        // Se reconectó — limpiar timestamp
+        if (offlineTimestamps[serial]) {
+          const mins = Math.floor((ahora - offlineTimestamps[serial].since) / 60000);
+          if (mins >= UMBRAL_MIN) {
+            const grupo = dev.groupName || dev.group || 'Sin grupo';
+            addRecovery(serial, grupo, mins);
+          }
+          delete offlineTimestamps[serial];
+        }
+      }
+    });
+
     updateMetrics();
     renderDevices();
-    detectChanges(prev, devices);
     const now = new Date().toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
     document.getElementById('lastUpdate').textContent = 'Actualizado ' + now;
     document.getElementById('liveDot').style.background = '#10b981';
@@ -339,7 +367,7 @@ function updateMetrics() {
   const pct = total > 0 ? Math.round((ok/total)*100) : 0;
 
   document.getElementById('mTotal').textContent = total;
-  document.getElementById('mSubTotal').textContent = `${noContent} sin contenido asignado`;
+  document.getElementById('mSubTotal').textContent = noContent + ' sin contenido asignado';
   document.getElementById('mOk').textContent = ok;
   document.getElementById('mOffline').textContent = offline;
   document.getElementById('mError').textContent = error;
@@ -354,6 +382,15 @@ function setFilter(f, btn) {
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderDevices();
+}
+
+function getOfflineTime(serial) {
+  if (!offlineTimestamps[serial]) return null;
+  const mins = Math.floor((Date.now() - offlineTimestamps[serial].since) / 60000);
+  if (mins < 1) return 'recién offline';
+  if (mins < 60) return mins + ' min offline';
+  const h = Math.floor(mins/60), m = mins%60;
+  return h + 'h ' + m + 'min offline';
 }
 
 function renderDevices() {
@@ -376,8 +413,15 @@ function renderDevices() {
 
   document.getElementById('deviceGrid').innerHTML = filtered.map(d => {
     let cardClass, dotClass, statusClass, statusText;
+    const ahora = Date.now();
+    const ts = offlineTimestamps[d.serial];
+    const mins = ts ? Math.floor((ahora - ts.since) / 60000) : 0;
+    const esCritico = !d.isOnline && mins >= UMBRAL_MIN;
+
     if (!d.isOnline) {
-      cardClass = 'offline'; dotClass = 'offline'; statusClass = 'offline'; statusText = 'Offline';
+      cardClass = 'offline'; dotClass = 'offline';
+      statusClass = esCritico ? 'critical' : 'offline';
+      statusText = esCritico ? '+2h offline' : 'Offline';
     } else if (!d.contentId) {
       cardClass = 'warn'; dotClass = 'warn'; statusClass = 'nocontent'; statusText = 'Sin contenido';
     } else if (d.contentStatus && d.contentStatus.toLowerCase() !== 'success') {
@@ -385,54 +429,55 @@ function renderDevices() {
     } else {
       cardClass = 'ok'; dotClass = 'ok'; statusClass = 'ok'; statusText = 'OK';
     }
+
     const grupo = d.groupName || d.group || 'Sin grupo';
     const contenido = d.contentName || '—';
+    const tiempoOffline = !d.isOnline ? getOfflineTime(d.serial) : null;
+
     return `<div class="device-card ${cardClass}">
       <div class="status-dot ${dotClass}"></div>
       <div class="device-info">
         <div class="device-serial">${d.serial}</div>
         <div class="device-group">${grupo}</div>
         <div class="device-content">${contenido}</div>
+        ${tiempoOffline ? `<div class="device-offline-time">${tiempoOffline}</div>` : ''}
       </div>
       <span class="device-status ${statusClass}">${statusText}</span>
     </div>`;
   }).join('');
 }
 
-function detectChanges(prev, curr) {
-  if (!prev.length) return;
-  const prevMap = {};
-  prev.forEach(d => { prevMap[d.serial] = d.isOnline; });
-  curr.forEach(d => {
-    const wasOnline = prevMap[d.serial];
-    if (wasOnline === undefined) return;
-    if (wasOnline && !d.isOnline) {
-      addAlert('danger', d.serial, (d.groupName || 'Sin grupo'), 'Se desconectó');
-    } else if (!wasOnline && d.isOnline) {
-      addAlert('ok', d.serial, (d.groupName || 'Sin grupo'), 'Se reconectó');
-    }
-  });
+function addAlert(serial, grupo, mins) {
+  const h = Math.floor(mins/60), m = mins%60;
+  const now = new Date().toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit'});
+  alerts.unshift({type:'danger', serial, grupo, msg: 'Offline ' + h + 'h ' + m + 'min', time: now});
+  if (alerts.length > 50) alerts.pop();
+  renderAlerts();
 }
 
-function addAlert(type, serial, group, msg) {
+function addRecovery(serial, grupo, mins) {
+  const h = Math.floor(mins/60), m = mins%60;
   const now = new Date().toLocaleTimeString('es-CL', {hour:'2-digit',minute:'2-digit'});
-  alerts.unshift({type, serial, group, msg, time: now});
+  alerts.unshift({type:'ok', serial, grupo, msg: 'Recuperado tras ' + h + 'h ' + m + 'min', time: now});
   if (alerts.length > 50) alerts.pop();
   renderAlerts();
 }
 
 function renderAlerts() {
-  document.getElementById('alertCount').textContent = alerts.length + ' eventos';
+  document.getElementById('alertCount').textContent = alerts.length + ' alertas';
   if (!alerts.length) {
-    document.getElementById('alertsList').innerHTML = '<div class="empty">Sin alertas registradas en esta sesión.</div>';
+    document.getElementById('alertsList').innerHTML = '<div class="empty">Sin alertas. Las alertas aparecerán cuando un dispositivo lleve 2 horas desconectado.</div>';
     return;
   }
-  document.getElementById('alertsList').innerHTML = alerts.map(a => `
-    <div class="alert-row">
+  document.getElementById('alertsList').innerHTML = alerts.map(a =>
+    `<div class="alert-row">
       <span class="alert-time">${a.time}</span>
-      <div class="alert-dot" style="background:${a.type === 'ok' ? 'var(--ok)' : 'var(--danger)'}"></div>
-      <span class="alert-msg"><span class="alert-serial">${a.serial}</span> — ${a.group} — ${a.msg}</span>
-    </div>`).join('');
+      <div class="alert-dot" style="background:${a.type==='ok'?'var(--ok)':'var(--danger)'}"></div>
+      <span class="alert-msg">
+        <span class="alert-serial">${a.serial}</span> — ${a.grupo} — ${a.msg}
+      </span>
+    </div>`
+  ).join('');
 }
 </script>
 </body>
