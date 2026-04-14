@@ -1,1 +1,1 @@
-worker: eloview_monitor.py
+web: python eloview_monitor.py
