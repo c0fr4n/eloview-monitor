@@ -2,3 +2,4 @@ requests
 schedule
 flask
 flask-cors
+redis
