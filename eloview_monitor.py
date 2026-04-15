@@ -15,6 +15,7 @@ CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "QlvJxcZsoZLMWYzOckdRlb6VPT80qz8
 ORG_ID        = os.environ.get("ORG_ID",        "01K7PZV1M1HWYWAKGC75GWXVEB")
 TG_TOKEN      = os.environ.get("TG_TOKEN",      "8518345019:AAHnPkjv1xqCQ2EtPPpaeaCd5izBFUcKFXE")
 TG_CHAT       = os.environ.get("TG_CHAT",       "1019869677")
+GCHAT_WEBHOOK = os.environ.get("GCHAT_WEBHOOK", "")
 REDIS_URL     = os.environ.get("REDIS_URL",     "redis://localhost:6379")
 PORT          = int(os.environ.get("PORT", 8080))
 
@@ -27,7 +28,7 @@ BASE           = "https://secure-api.eloview.com/prod"
 REDIS_KEY      = "eloview:estado"
 # ──────────────────────────────────────────────────────────
 
-app   = Flask(__name__)
+app = Flask(__name__)
 CORS(app)
 token_cache = {"token": None, "obtenido_a": 0}
 rdb = redis.from_url(REDIS_URL, decode_responses=True)
@@ -59,11 +60,27 @@ def get_devices(token):
 
 
 def send_telegram(msg):
-    requests.post(
-        f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-        json={"chat_id": TG_CHAT, "text": msg, "parse_mode": "Markdown"},
-        timeout=10
-    )
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+            json={"chat_id": TG_CHAT, "text": msg, "parse_mode": "Markdown"},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"  ERROR Telegram: {e}")
+
+
+def send_gchat(msg):
+    if not GCHAT_WEBHOOK:
+        return
+    try:
+        requests.post(
+            GCHAT_WEBHOOK,
+            json={"text": msg},
+            timeout=10
+        )
+    except Exception as e:
+        print(f"  ERROR Google Chat: {e}")
 
 
 def cargar_estado():
@@ -118,7 +135,7 @@ def run_monitor():
                 if minutos_offline >= UMBRAL_OFFLINE and not alerta_enviada and hora_en_rango():
                     horas   = minutos_offline // 60
                     minutos = minutos_offline % 60
-                    msg = (
+                    msg_tg = (
                         f"🚨 *Alerta EloView — Dispositivo offline*\n"
                         f"Serial: `{serial}`\n"
                         f"Grupo: {grupo}\n"
@@ -126,9 +143,18 @@ def run_monitor():
                         f"Tiempo offline: {horas}h {minutos}min\n"
                         f"Fecha: {ahora_str}"
                     )
-                    send_telegram(msg)
+                    msg_gc = (
+                        f"🚨 *Alerta EloView — Dispositivo offline*\n"
+                        f"Serial: {serial}\n"
+                        f"Grupo: {grupo}\n"
+                        f"Contenido: {contenido}\n"
+                        f"Tiempo offline: {horas}h {minutos}min\n"
+                        f"Fecha: {ahora_str}"
+                    )
+                    send_telegram(msg_tg)
+                    send_gchat(msg_gc)
                     alerta_enviada = True
-                    print(f"  [{serial}] Alerta Telegram — {horas}h {minutos}min offline")
+                    print(f"  [{serial}] Alerta enviada — {horas}h {minutos}min offline")
 
                 estado[serial] = {
                     "online": False,
@@ -144,14 +170,22 @@ def run_monitor():
                     if minutos_offline >= UMBRAL_OFFLINE:
                         horas   = minutos_offline // 60
                         minutos = minutos_offline % 60
-                        msg = (
+                        msg_tg = (
                             f"✅ *Recuperación EloView*\n"
                             f"Serial: `{serial}`\n"
                             f"Grupo: {grupo}\n"
                             f"Estuvo offline: {horas}h {minutos}min\n"
                             f"Fecha: {ahora_str}"
                         )
-                        send_telegram(msg)
+                        msg_gc = (
+                            f"✅ Recuperación EloView\n"
+                            f"Serial: {serial}\n"
+                            f"Grupo: {grupo}\n"
+                            f"Estuvo offline: {horas}h {minutos}min\n"
+                            f"Fecha: {ahora_str}"
+                        )
+                        send_telegram(msg_tg)
+                        send_gchat(msg_gc)
                         print(f"  [{serial}] Recuperado tras {horas}h {minutos}min")
 
                 estado[serial] = {
@@ -187,12 +221,9 @@ def reporte_diario():
         pct     = round((ok / total) * 100) if total else 0
         fecha   = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-        msg  = f"📊 *Reporte diario EloView*\n_{fecha}_\n\n"
-        msg += f"*Resumen*\n"
-        msg += f"• Total: {total} dispositivos\n"
-        msg += f"• Operativos: {ok}\n"
-        msg += f"• Offline: {offline}\n"
-        msg += f"• Disponibilidad: {pct}%\n"
+        msg_tg  = f"📊 *Reporte diario EloView*\n_{fecha}_\n\n"
+        msg_tg += f"*Resumen*\n• Total: {total}\n• Operativos: {ok}\n• Offline: {offline}\n• Disponibilidad: {pct}%\n"
+        msg_gc  = f"📊 Reporte diario EloView\n{fecha}\n\nResumen\n• Total: {total}\n• Operativos: {ok}\n• Offline: {offline}\n• Disponibilidad: {pct}%\n"
 
         problemas = []
         for d in devs:
@@ -207,22 +238,24 @@ def reporte_diario():
                     horas = mins // 60
                     resto = mins % 60
                     tiempo = f" — {horas}h {resto}min offline"
-                problemas.append(f"• `{serial}` ({grupo}){tiempo}")
+                problemas.append(f"• {serial} ({grupo}){tiempo}")
 
         if problemas:
-            msg += f"\n*Dispositivos offline ({len(problemas)}):*\n"
-            msg += "\n".join(problemas)
+            detalle = f"\nDispositivos offline ({len(problemas)}):\n" + "\n".join(problemas)
+            msg_tg += detalle
+            msg_gc += detalle
         else:
-            msg += "\nTodos los dispositivos están operativos."
+            msg_tg += "\nTodos los dispositivos están operativos."
+            msg_gc += "\nTodos los dispositivos están operativos."
 
-        send_telegram(msg)
+        send_gchat(msg_gc)
         print(f"  Reporte enviado. {total} dispositivos, {offline} offline.")
 
     except Exception as e:
         print(f"  ERROR en reporte diario: {e}")
 
 
-# ── API endpoints ─────────────────────────────────────────
+# ── API endpoints ──────────────────────────────────────────
 @app.route('/estado', methods=['GET'])
 def get_estado():
     estado = cargar_estado()
